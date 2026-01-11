@@ -1,0 +1,1029 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Terremotos – Satélite PRO (PR/Caribe & Global)</title>
+
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+
+  <style>
+    :root{
+      --bg:#07101b;
+      --text:#e9f0ff;
+      --muted:#a9b7d0;
+      --line:rgba(255,255,255,.12);
+      --accent:#4aa3ff;
+      --danger:#e84b4b;
+    }
+    html,body{height:100%; margin:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Inter,Helvetica,Arial;}
+    body{background:var(--bg); color:var(--text);}
+
+    /* Top bar */
+    .topbar{
+      position:fixed; left:0; right:0; top:0;
+      height:56px; display:flex; align-items:center; gap:10px;
+      padding:0 12px;
+      background:linear-gradient(to bottom, rgba(7,16,27,.92), rgba(7,16,27,.55));
+      z-index:1100;
+      backdrop-filter: blur(10px);
+      border-bottom:1px solid var(--line);
+    }
+    .brand{font-weight:950; letter-spacing:.2px}
+    .btn{
+      cursor:pointer; user-select:none;
+      background:rgba(255,255,255,.07);
+      border:1px solid var(--line);
+      color:var(--text);
+      padding:8px 10px; border-radius:10px;
+      font-size:12px;
+      white-space:nowrap;
+    }
+    .btn.active{
+      border-color:rgba(74,163,255,.55);
+      box-shadow:0 0 0 2px rgba(74,163,255,.18) inset;
+    }
+    .pill{
+      margin-left:auto;
+      display:flex; gap:8px; align-items:center;
+      background:rgba(255,255,255,.07);
+      border:1px solid var(--line);
+      padding:8px 10px; border-radius:999px;
+      font-size:12px; color:var(--muted);
+    }
+    .dot{width:8px;height:8px;border-radius:50%;background:#35d07f; box-shadow:0 0 10px rgba(53,208,127,.6)}
+
+    /* Main map */
+    #map{
+      position:fixed;
+      top:56px; left:0; right:0;
+      bottom:310px; /* más alto por controles + chart */
+      z-index:1;
+    }
+
+    /* Bottom panel */
+    .sheet{
+      position:fixed; left:0; right:0; bottom:0;
+      height:310px;
+      background:linear-gradient(to top, rgba(11,22,38,.98), rgba(11,22,38,.92));
+      border-top:1px solid var(--line);
+      z-index:1100;
+      display:flex; flex-direction:column;
+      backdrop-filter: blur(10px);
+    }
+    .sheetHeader{padding:10px 12px; border-bottom:1px solid var(--line);}
+    .handle{width:44px;height:5px;border-radius:999px;background:rgba(255,255,255,.20); margin:0 auto;}
+
+    .controls{
+      display:grid;
+      grid-template-columns: 1fr 1fr;
+      gap:10px;
+      padding:10px 12px;
+      border-bottom:1px solid var(--line);
+    }
+    .controlBox{
+      background:rgba(255,255,255,.06);
+      border:1px solid var(--line);
+      border-radius:14px;
+      padding:10px;
+      min-height:64px;
+    }
+    .label{font-size:12px;color:var(--muted); margin-bottom:6px;}
+    .row{display:flex; align-items:center; gap:10px;}
+    input[type="text"]{
+      width:100%;
+      background:rgba(0,0,0,.15);
+      color:var(--text);
+      border:1px solid rgba(255,255,255,.14);
+      border-radius:12px;
+      padding:10px 10px;
+      outline:none;
+      font-size:13px;
+    }
+    input[type="range"]{width:100%;}
+    .miniBtns{display:flex; gap:8px; flex-wrap:wrap;}
+    .chip{
+      cursor:pointer;
+      padding:7px 10px;
+      border-radius:999px;
+      font-size:12px;
+      border:1px solid var(--line);
+      background:rgba(255,255,255,.06);
+      color:var(--text);
+    }
+    .chip.active{
+      border-color:rgba(74,163,255,.55);
+      box-shadow:0 0 0 2px rgba(74,163,255,.18) inset;
+    }
+
+    .titleRow{
+      display:flex; justify-content:space-between;
+      padding:8px 12px 6px;
+      color:var(--muted); font-size:12px;
+      border-bottom:1px solid var(--line);
+    }
+
+    /* mini chart */
+    .chartWrap{
+      padding:8px 12px 0;
+      border-bottom:1px solid var(--line);
+    }
+    canvas{width:100%; height:70px; display:block; border-radius:14px; background:rgba(255,255,255,.04); border:1px solid var(--line);}
+
+    /* list */
+    .list{overflow:auto; padding:6px 0 10px;}
+    .item{display:flex; align-items:center; gap:12px; padding:12px; border-bottom:1px solid var(--line); cursor:pointer;}
+    .item:hover{background:rgba(255,255,255,.05)}
+    .left{flex:1; min-width:0}
+    .place{font-weight:800; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+    .sub{color:var(--muted); font-size:12px; margin-top:3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+    .badge{
+      min-width:62px; text-align:center; font-weight:950;
+      padding:10px 12px; border-radius:14px; color:#fff;
+      background:#ff5b5b;
+      box-shadow:0 8px 18px rgba(255,91,91,.18);
+    }
+
+    /* ===== Detail overlay ===== */
+    .detailOverlay{
+      position:fixed; inset:0;
+      display:none;
+      z-index:2000;
+      background:rgba(0,0,0,.35);
+      backdrop-filter: blur(2px);
+    }
+    .detailOverlay.open{display:block;}
+    .detailWrap{position:absolute; inset:0; display:flex; flex-direction:column;}
+
+    .detailHeader{
+      background:var(--danger);
+      padding:16px 14px 14px;
+      border-bottom:1px solid rgba(255,255,255,.18);
+      color:#fff;
+    }
+    .detailHeaderTop{
+      display:flex; align-items:center; justify-content:space-between;
+      margin-bottom:10px;
+      gap:10px;
+    }
+    .iconBtn{
+      width:44px; height:44px; border-radius:14px;
+      display:grid; place-items:center;
+      background:rgba(255,255,255,.14);
+      border:1px solid rgba(255,255,255,.20);
+      cursor:pointer; user-select:none;
+      flex:0 0 auto;
+    }
+    .headerTitle{
+      text-align:center;
+      font-weight:950;
+      letter-spacing:.2px;
+      font-size:14px;
+      opacity:.95;
+      flex:1;
+      white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+    }
+    .placeBig{
+      font-size:22px;
+      font-weight:980;
+      line-height:1.1;
+      margin-top:4px;
+      white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+    }
+    .placeSmall{
+      opacity:.85;
+      margin-top:6px;
+      font-size:13px;
+      white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+    }
+
+    #detailMap{flex:1; min-height:260px;}
+
+    .detailSheet{
+      background:rgba(11,22,38,.98);
+      border-top:1px solid var(--line);
+      padding:14px 12px 18px;
+    }
+    .magRow{display:flex; align-items:center; gap:12px; margin-bottom:10px;}
+    .magCircle{
+      width:56px; height:56px; border-radius:50%;
+      display:grid; place-items:center;
+      background:var(--danger);
+      font-weight:980; font-size:18px;
+      color:#fff;
+      flex:0 0 auto;
+      box-shadow:0 10px 22px rgba(0,0,0,.25);
+    }
+    .magText .magTitle{font-weight:980; font-size:16px;}
+    .magText .magDesc{color:var(--muted); font-size:13px; margin-top:3px;}
+    .metaGrid{
+      margin-top:12px;
+      display:grid;
+      grid-template-columns: 1fr 1fr;
+      gap:10px;
+    }
+    .meta{
+      background:rgba(255,255,255,.06);
+      border:1px solid var(--line);
+      border-radius:14px;
+      padding:10px;
+      min-height:56px;
+    }
+    .metaLabel{color:var(--muted); font-size:12px; margin-bottom:6px;}
+    .metaVal{font-weight:850; font-size:13px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+
+    /* Apple-like pin */
+    .apple-pin{
+      width: 30px; height: 30px;
+      background: var(--danger);
+      border-radius: 50% 50% 50% 0;
+      transform: rotate(-45deg);
+      position: relative;
+      box-shadow: 0 10px 22px rgba(0,0,0,.35);
+      border: 1px solid rgba(255,255,255,.25);
+    }
+    .apple-pin::after{
+      content:"";
+      width: 10px; height: 10px;
+      background: rgba(0,0,0,.25);
+      border-radius: 50%;
+      position: absolute;
+      top: 9px; left: 9px;
+      transform: rotate(45deg);
+    }
+    .apple-pin-wrap{transform: translate(-15px, -28px);}
+
+    /* User location dot */
+    .user-dot{
+      width:16px; height:16px;
+      background:#2f7cff;
+      border-radius:50%;
+      border:2px solid rgba(255,255,255,.9);
+      box-shadow:0 10px 20px rgba(0,0,0,.25), 0 0 0 8px rgba(47,124,255,.18);
+    }
+    .user-dot-wrap{transform: translate(-8px, -8px);}
+
+    /* Leaflet tweaks */
+    .leaflet-control-attribution{display:none;}
+    .leaflet-control-zoom a{
+      background:rgba(11,22,38,.88)!important;
+      color:var(--text)!important;
+      border:1px solid var(--line)!important;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="topbar">
+    <div class="brand">Terremotos</div>
+
+    <button id="btnCaribe" class="btn active">PR/Caribe</button>
+    <button id="btnGlobal" class="btn">Global</button>
+    <button id="btnPlacas" class="btn active">Placas/Fallas</button>
+    <button id="btnHeat" class="btn">Heatmap</button>
+    <button id="btnNotify" class="btn">Alertas</button>
+    <button id="btnMyLoc" class="btn active">Mi ubicación</button>
+
+    <div class="pill"><span class="dot"></span><span id="status">actualizando…</span></div>
+  </div>
+
+  <div id="map"></div>
+
+  <div class="sheet">
+    <div class="sheetHeader"><div class="handle"></div></div>
+
+    <div class="controls">
+      <div class="controlBox">
+        <div class="label">Buscar lugar</div>
+        <input id="searchBox" type="text" placeholder="Ej: Guaynabo, Puerto Rico" />
+      </div>
+
+      <div class="controlBox">
+        <div class="label">Magnitud mínima: <span id="minMagLabel">0.0</span></div>
+        <div class="row">
+          <input id="minMag" type="range" min="0" max="7" step="0.1" value="0" />
+        </div>
+        <div class="miniBtns" style="margin-top:8px;">
+          <div class="chip" data-mag="0">Todos</div>
+          <div class="chip" data-mag="2">M2+</div>
+          <div class="chip" data-mag="3">M3+</div>
+          <div class="chip" data-mag="4">M4+</div>
+          <div class="chip" data-mag="5">M5+</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="titleRow">
+      <div id="rangeLabel">Mostrando: PR/Caribe (últimas 24h)</div>
+      <div id="countLabel">0 eventos</div>
+    </div>
+
+    <div class="chartWrap">
+      <div class="label" style="margin-bottom:8px;">Actividad por hora (últimas 24h)</div>
+      <canvas id="miniChart" width="800" height="140"></canvas>
+    </div>
+
+    <div id="list" class="list"></div>
+  </div>
+
+  <!-- DETAIL -->
+  <div id="detailOverlay" class="detailOverlay" aria-hidden="true">
+    <div class="detailWrap">
+      <div class="detailHeader">
+        <div class="detailHeaderTop">
+          <div class="iconBtn" id="btnBack" title="Volver">←</div>
+          <div id="headerTitle" class="headerTitle">Sismo</div>
+          <div style="display:flex; gap:10px;">
+            <div class="iconBtn" id="btnShare" title="Compartir">⤴︎</div>
+            <div class="iconBtn" id="btnOpen" title="Abrir USGS">🗺</div>
+          </div>
+        </div>
+        <div id="placeBig" class="placeBig">—</div>
+        <div id="placeSmall" class="placeSmall">—</div>
+      </div>
+
+      <div id="detailMap"></div>
+
+      <div class="detailSheet">
+        <div class="magRow">
+          <div id="magCircle" class="magCircle">0.00</div>
+          <div class="magText">
+            <div id="magTitle" class="magTitle">Magnitud</div>
+            <div id="magDesc" class="magDesc">—</div>
+          </div>
+        </div>
+
+        <div class="metaGrid">
+          <div class="meta">
+            <div class="metaLabel">Hora</div>
+            <div id="metaTime" class="metaVal">—</div>
+          </div>
+          <div class="meta">
+            <div class="metaLabel">Distancia</div>
+            <div id="metaDist" class="metaVal">—</div>
+          </div>
+          <div class="meta">
+            <div class="metaLabel">Coordenadas</div>
+            <div id="metaCoord" class="metaVal">—</div>
+          </div>
+          <div class="meta">
+            <div class="metaLabel">Profundidad</div>
+            <div id="metaDepth" class="metaVal">—</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Leaflet + Heat -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet.heat/dist/leaflet-heat.js"></script>
+
+  <script>
+    // ===== FEEDS =====
+    const USGS_ALL_DAY = "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_day.geojson";
+    const PLATE_BOUNDARIES_GEOJSON =
+      "https://raw.githubusercontent.com/fraxen/tectonicplates/master/GeoJSON/PB2002_boundaries.json";
+
+    // PR/Caribe bbox
+    const CARIBBEAN_BBOX = { minLat: 5, maxLat: 25, minLon: -90, maxLon: -55 };
+
+    // ===== UI =====
+    const statusEl = document.getElementById("status");
+    const listEl = document.getElementById("list");
+    const countLabel = document.getElementById("countLabel");
+    const rangeLabel = document.getElementById("rangeLabel");
+
+    const btnCaribe = document.getElementById("btnCaribe");
+    const btnGlobal = document.getElementById("btnGlobal");
+    const btnPlacas = document.getElementById("btnPlacas");
+    const btnHeat = document.getElementById("btnHeat");
+    const btnNotify = document.getElementById("btnNotify");
+    const btnMyLoc = document.getElementById("btnMyLoc");
+
+    const searchBox = document.getElementById("searchBox");
+    const minMag = document.getElementById("minMag");
+    const minMagLabel = document.getElementById("minMagLabel");
+
+    const chips = Array.from(document.querySelectorAll(".chip"));
+
+    const overlay = document.getElementById("detailOverlay");
+    const btnBack = document.getElementById("btnBack");
+    const btnShare = document.getElementById("btnShare");
+    const btnOpen = document.getElementById("btnOpen");
+    const headerTitle = document.getElementById("headerTitle");
+
+    const placeBig = document.getElementById("placeBig");
+    const placeSmall = document.getElementById("placeSmall");
+    const magCircle = document.getElementById("magCircle");
+    const magTitle = document.getElementById("magTitle");
+    const magDesc = document.getElementById("magDesc");
+    const metaTime = document.getElementById("metaTime");
+    const metaDist = document.getElementById("metaDist");
+    const metaCoord = document.getElementById("metaCoord");
+    const metaDepth = document.getElementById("metaDepth");
+
+    const chartCanvas = document.getElementById("miniChart");
+    const chartCtx = chartCanvas.getContext("2d");
+
+    // ===== STATE =====
+    let mode = "caribe"; // caribe|global
+    let platesOn = true;
+    let heatOn = false;
+    let myLocOn = true;
+
+    let minMagValue = 0;
+    let searchValue = "";
+
+    let platesData = null;
+    let currentQuakes = [];
+    let selected = null;
+
+    // notificaciones en sesión (no push)
+    let notifyOn = false;
+    let lastSeenIds = new Set(); // track ids de la carga anterior
+
+    // user location (default San Juan)
+    let userLoc = { lat: 18.4655, lon: -66.1057 };
+    let userMarker = null;
+
+    // ===== BASEMAP SATELITE + LABELS =====
+    function addSatelliteBase(targetMap){
+      L.tileLayer(
+        "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+        { maxZoom: 19 }
+      ).addTo(targetMap);
+
+      L.tileLayer(
+        "https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}",
+        { maxZoom: 19 }
+      ).addTo(targetMap);
+    }
+
+    // ===== MAPS =====
+    const map = L.map("map").setView([18.2, -66.4], 7);
+    addSatelliteBase(map);
+
+    const markersLayer = L.layerGroup().addTo(map);
+    const platesLayerMain = L.layerGroup().addTo(map);
+
+    const heatLayerMain = L.heatLayer([], {
+      radius: 28,
+      blur: 20,
+      maxZoom: 6
+    });
+
+    // detail map
+    let detailMap, detailMarker;
+    const platesLayerDetail = L.layerGroup();
+
+    function ensureDetailMap(){
+      if (detailMap) return;
+      detailMap = L.map("detailMap", { zoomControl: true }).setView([18.2, -66.4], 8);
+      addSatelliteBase(detailMap);
+      platesLayerDetail.addTo(detailMap);
+    }
+
+    // ===== HELPERS =====
+    function inBBox(lat, lon, bb){
+      return lat >= bb.minLat && lat <= bb.maxLat && lon >= bb.minLon && lon <= bb.maxLon;
+    }
+
+    function magColor(m){
+      if (m >= 6) return "#ff2d2d";
+      if (m >= 5) return "#ff4a4a";
+      if (m >= 4) return "#ff7a45";
+      if (m >= 3) return "#ffa940";
+      if (m >= 2) return "#ffd666";
+      return "#73d13d";
+    }
+
+    function circleMarker(lat, lon, mag){
+      const r = Math.max(5, Math.min(18, 4 + (mag || 0) * 2.2));
+      return L.circleMarker([lat, lon], {
+        radius: r,
+        color: "rgba(255,255,255,.42)",
+        weight: 1,
+        fillColor: magColor(mag),
+        fillOpacity: 0.85
+      });
+    }
+
+    function fmtDateTime(ts){
+      const d = new Date(ts);
+      return d.toLocaleString([], {
+        year:"2-digit", month:"numeric", day:"numeric",
+        hour:"numeric", minute:"2-digit", second:"2-digit"
+      });
+    }
+
+    function ago(ts){
+      const diff = Date.now() - ts;
+      const min = Math.floor(diff / 60000);
+      if (min < 60) return `Hace ${min} min.`;
+      const hr = Math.floor(min / 60);
+      if (hr < 24) return `Hace ${hr} h`;
+      const days = Math.floor(hr / 24);
+      return `Hace ${days} d`;
+    }
+
+    function cleanPlace(place){
+      return (place || "Ubicación no disponible").replace(" of ", " de ");
+    }
+
+    function haversineMiles(lat1, lon1, lat2, lon2){
+      const toRad = v => v * Math.PI / 180;
+      const R = 3958.7613; // miles
+      const dLat = toRad(lat2 - lat1);
+      const dLon = toRad(lon2 - lon1);
+      const a =
+        Math.sin(dLat/2)**2 +
+        Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLon/2)**2;
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+      return R * c;
+    }
+
+    function bearingDeg(lat1, lon1, lat2, lon2){
+      const toRad = v => v * Math.PI / 180;
+      const toDeg = v => v * 180 / Math.PI;
+      const φ1 = toRad(lat1), φ2 = toRad(lat2);
+      const Δλ = toRad(lon2 - lon1);
+      const y = Math.sin(Δλ) * Math.cos(φ2);
+      const x = Math.cos(φ1)*Math.sin(φ2) - Math.sin(φ1)*Math.cos(φ2)*Math.cos(Δλ);
+      return (toDeg(Math.atan2(y, x)) + 360) % 360;
+    }
+
+    function bearingToCompass16(deg){
+      const dirs = ["N","NNE","NE","ENE","E","ESE","SE","SSE","S","SSW","SW","WSW","W","WNW","NW","NNW"];
+      const idx = Math.round(deg / 22.5) % 16;
+      return dirs[idx];
+    }
+
+    function magLabel(magType){
+      if (!magType) return "Magnitud";
+      const t = String(magType).toLowerCase();
+      if (t === "md") return "Magnitud de duración";
+      if (t === "mw") return "Magnitud de momento";
+      if (t === "ml") return "Magnitud local";
+      return `Magnitud (${t})`;
+    }
+
+    function impactText(m){
+      if (m >= 6) return "Se sentiría fuerte, posibles daños.";
+      if (m >= 5) return "Se sentiría amplio, daños leves posibles.";
+      if (m >= 4) return "Las personas lo sintieron, poco daño.";
+      if (m >= 3) return "Algunas personas lo sienten.";
+      if (m >= 2) return "Pocas personas lo sienten.";
+      return "Generalmente no se siente.";
+    }
+
+    // ===== PLATES =====
+    function plateStyle(){
+      return { color: "rgba(255, 80, 80, 0.92)", weight: 2, opacity: 1 };
+    }
+
+    function clearPlatesLayers(){
+      platesLayerMain.clearLayers();
+      platesLayerDetail.clearLayers();
+    }
+
+    function applyPlatesToMaps(){
+      clearPlatesLayers();
+      if (!platesOn || !platesData) return;
+
+      L.geoJSON(platesData, { style: plateStyle }).addTo(platesLayerMain);
+      if (detailMap){
+        L.geoJSON(platesData, { style: plateStyle }).addTo(platesLayerDetail);
+      }
+    }
+
+    async function loadPlatesOnce(){
+      try{
+        const res = await fetch(PLATE_BOUNDARIES_GEOJSON, { cache:"force-cache" });
+        if (!res.ok) throw new Error("No se pudo cargar placas");
+        platesData = await res.json();
+        applyPlatesToMaps();
+      } catch (e){
+        platesData = null;
+        platesOn = false;
+        btnPlacas.classList.remove("active");
+        console.error(e);
+      }
+    }
+
+    // ===== USER LOCATION =====
+    function setUserMarker(){
+      if (!myLocOn){
+        if (userMarker){ userMarker.remove(); userMarker = null; }
+        return;
+      }
+      const dotIcon = L.divIcon({
+        className: "user-dot-wrap",
+        html: `<div class="user-dot"></div>`,
+        iconSize: [16,16],
+        iconAnchor: [8,8]
+      });
+      if (!userMarker){
+        userMarker = L.marker([userLoc.lat, userLoc.lon], { icon: dotIcon, zIndexOffset: 9999 }).addTo(map);
+      } else {
+        userMarker.setLatLng([userLoc.lat, userLoc.lon]);
+      }
+    }
+
+    function initGeolocation(){
+      if (!navigator.geolocation) return;
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          userLoc = { lat: pos.coords.latitude, lon: pos.coords.longitude };
+          setUserMarker();
+          render(); // recalcula distancias
+        },
+        () => { setUserMarker(); },
+        { enableHighAccuracy: true, timeout: 7000, maximumAge: 60000 }
+      );
+    }
+
+    // ===== MODE + FILTERS =====
+    function setMode(newMode){
+      mode = newMode;
+      btnCaribe.classList.toggle("active", mode === "caribe");
+      btnGlobal.classList.toggle("active", mode === "global");
+
+      if (mode === "caribe"){
+        rangeLabel.textContent = "Mostrando: PR/Caribe (últimas 24h)";
+        map.setView([18.2, -66.4], 7);
+      } else {
+        rangeLabel.textContent = "Mostrando: Global (últimas 24h)";
+        map.setView([20, 0], 2);
+      }
+      render();
+    }
+
+    function passesFilters(q){
+      const mag = (q.mag ?? 0);
+      if (mag < minMagValue) return false;
+
+      if (searchValue.trim()){
+        const t = searchValue.trim().toLowerCase();
+        if (!String(q.place || "").toLowerCase().includes(t)) return false;
+      }
+      return true;
+    }
+
+    function getVisibleQuakes(){
+      let quakes = currentQuakes.slice();
+
+      if (mode === "caribe"){
+        quakes = quakes.filter(q => inBBox(q.lat, q.lon, CARIBBEAN_BBOX));
+      }
+
+      quakes = quakes.filter(passesFilters);
+
+      quakes.sort((a,b) => b.time - a.time);
+      return quakes;
+    }
+
+    // ===== HEATMAP =====
+    function applyHeat(quakes){
+      const points = quakes.map(q => [q.lat, q.lon, Math.max(0.2, (q.mag || 0.5))]);
+      heatLayerMain.setLatLngs(points);
+
+      if (heatOn){
+        if (!map.hasLayer(heatLayerMain)) map.addLayer(heatLayerMain);
+      } else {
+        if (map.hasLayer(heatLayerMain)) map.removeLayer(heatLayerMain);
+      }
+    }
+
+    // ===== MINI CHART =====
+    function drawMiniChart(quakes){
+      // conteo por hora (últimas 24h)
+      const now = Date.now();
+      const buckets = new Array(24).fill(0);
+      quakes.forEach(q => {
+        const hAgo = Math.floor((now - q.time) / 3600000);
+        if (hAgo >= 0 && hAgo < 24) buckets[23 - hAgo] += 1; // izquierda=viejo, derecha=reciente
+      });
+
+      const w = chartCanvas.width, h = chartCanvas.height;
+      chartCtx.clearRect(0,0,w,h);
+
+      // fondo sutil
+      chartCtx.fillStyle = "rgba(255,255,255,.02)";
+      chartCtx.fillRect(0,0,w,h);
+
+      const maxV = Math.max(1, ...buckets);
+      const pad = 18;
+      const innerW = w - pad*2;
+      const innerH = h - pad*2;
+
+      // grid horizontal
+      chartCtx.strokeStyle = "rgba(255,255,255,.10)";
+      chartCtx.lineWidth = 1;
+      for (let i=0;i<3;i++){
+        const y = pad + (innerH/2)*i;
+        chartCtx.beginPath();
+        chartCtx.moveTo(pad, y);
+        chartCtx.lineTo(pad+innerW, y);
+        chartCtx.stroke();
+      }
+
+      // barras
+      const barW = innerW / 24;
+      for (let i=0;i<24;i++){
+        const v = buckets[i];
+        const bh = (v / maxV) * innerH;
+        const x = pad + i*barW + 2;
+        const y = pad + innerH - bh;
+
+        // color automático por intensidad
+        const alpha = 0.25 + 0.55*(v/maxV);
+        chartCtx.fillStyle = `rgba(255, 91, 91, ${alpha})`;
+        chartCtx.fillRect(x, y, Math.max(2, barW-4), bh);
+      }
+
+      // label max
+      chartCtx.fillStyle = "rgba(233,240,255,.85)";
+      chartCtx.font = "12px -apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Arial";
+      chartCtx.fillText(`Máx/h: ${maxV}`, pad, 14);
+      chartCtx.fillStyle = "rgba(169,183,208,.9)";
+      chartCtx.fillText("24h", pad + innerW - 32, 14);
+    }
+
+    // ===== RENDER =====
+    function magColor(m){
+      if (m >= 6) return "#ff2d2d";
+      if (m >= 5) return "#ff4a4a";
+      if (m >= 4) return "#ff7a45";
+      if (m >= 3) return "#ffa940";
+      if (m >= 2) return "#ffd666";
+      return "#73d13d";
+    }
+
+    function render(){
+      const quakes = getVisibleQuakes();
+      countLabel.textContent = `${quakes.length} eventos`;
+
+      // markers
+      markersLayer.clearLayers();
+      quakes.forEach(q => {
+        const m = circleMarker(q.lat, q.lon, q.mag).addTo(markersLayer);
+        m.on("click", () => openDetail(q));
+      });
+
+      // heat + chart
+      applyHeat(quakes);
+      drawMiniChart(quakes);
+
+      // list
+      listEl.innerHTML = "";
+      quakes.slice(0, 50).forEach(q => {
+        const distMi = haversineMiles(userLoc.lat, userLoc.lon, q.lat, q.lon);
+        const row = document.createElement("div");
+        row.className = "item";
+        row.innerHTML = `
+          <div class="left">
+            <div class="place">${q.place}</div>
+            <div class="sub">${ago(q.time)} · ${distMi.toFixed(0)} mi · Prof. ${(q.depthKm ?? 0).toFixed(1)} km</div>
+          </div>
+          <div class="badge" style="background:${magColor(q.mag)}">${(q.mag ?? 0).toFixed(2)}</div>
+        `;
+        row.addEventListener("click", () => openDetail(q));
+        listEl.appendChild(row);
+      });
+
+      // user marker
+      setUserMarker();
+    }
+
+    // ===== DETAIL =====
+    function openDetail(q){
+      selected = q;
+
+      const distMi = haversineMiles(userLoc.lat, userLoc.lon, q.lat, q.lon);
+      const dir = bearingToCompass16(bearingDeg(userLoc.lat, userLoc.lon, q.lat, q.lon));
+
+      headerTitle.textContent = "Sismo";
+      placeBig.textContent   = `${distMi.toFixed(0)} millas ${dir} of ${q.place}`;
+      placeSmall.textContent = `${distMi.toFixed(0)} millas ${dir} of ${q.place}`;
+
+      magCircle.textContent = (q.mag ?? 0).toFixed(2);
+      magTitle.textContent  = magLabel(q.magType);
+      magDesc.textContent   = impactText(q.mag ?? 0);
+
+      metaTime.textContent  = fmtDateTime(q.time);
+      metaDist.textContent  = `${distMi.toFixed(0)} millas de distancia`;
+      metaCoord.textContent = `${q.lat.toFixed(3)}°, ${q.lon.toFixed(3)}°`;
+
+      const depthMi = (q.depthKm ?? 0) * 0.621371;
+      metaDepth.textContent = `${depthMi.toFixed(0)} millas profundidad`;
+
+      overlay.classList.add("open");
+      overlay.setAttribute("aria-hidden", "false");
+
+      ensureDetailMap();
+      setTimeout(() => {
+        detailMap.invalidateSize();
+        detailMap.setView([q.lat, q.lon], 8);
+
+        applyPlatesToMaps();
+
+        if (detailMarker) detailMarker.remove();
+
+        const pinIcon = L.divIcon({
+          className: "apple-pin-wrap",
+          html: `<div class="apple-pin"></div>`,
+          iconSize: [30, 30],
+          iconAnchor: [15, 30]
+        });
+
+        detailMarker = L.marker([q.lat, q.lon], { icon: pinIcon }).addTo(detailMap);
+        detailMarker.bindTooltip("Epicentro", {
+          permanent: true,
+          direction: "bottom",
+          offset: [0, 12],
+          opacity: 0.95
+        }).openTooltip();
+      }, 0);
+
+      btnOpen.onclick = () => window.open(q.url, "_blank");
+
+      btnShare.onclick = async () => {
+        const text = `Sismo ${magLabel(q.magType)} ${(q.mag ?? 0).toFixed(2)} · ${q.place} · ${fmtDateTime(q.time)} · Prof ${(depthMi ?? 0).toFixed(0)} mi`;
+        try{
+          if (navigator.share){
+            await navigator.share({ title:"Sismo", text, url:q.url });
+          } else {
+            await navigator.clipboard.writeText(`${text}\n${q.url}`);
+            alert("Copiado al portapapeles");
+          }
+        }catch(e){}
+      };
+    }
+
+    function closeDetail(){
+      overlay.classList.remove("open");
+      overlay.setAttribute("aria-hidden", "true");
+    }
+    btnBack.addEventListener("click", closeDetail);
+    overlay.addEventListener("click", (e) => { if (e.target === overlay) closeDetail(); });
+
+    // ===== NOTIFICATIONS (in-session) =====
+    async function enableNotifications(){
+      if (!("Notification" in window)){
+        alert("Tu navegador no soporta notificaciones.");
+        return false;
+      }
+      if (Notification.permission === "granted") return true;
+      const perm = await Notification.requestPermission();
+      return perm === "granted";
+    }
+
+    function maybeNotifyNewQuakes(newIds, newlyAddedQuakes){
+      if (!notifyOn) return;
+      if (Notification.permission !== "granted") return;
+      if (!newlyAddedQuakes.length) return;
+
+      // Notifica el más importante (mayor magnitud)
+      const top = newlyAddedQuakes.slice().sort((a,b) => (b.mag||0)-(a.mag||0))[0];
+      const title = `Nuevo sismo M ${(top.mag ?? 0).toFixed(1)}`;
+      const body = `${top.place} · ${fmtDateTime(top.time)} · Prof ${(top.depthKm ?? 0).toFixed(0)} km`;
+
+      try{
+        new Notification(title, { body });
+      }catch(e){}
+    }
+
+    // ===== LOAD USGS =====
+    async function loadQuakes(){
+      try{
+        statusEl.textContent = "actualizando…";
+        const res = await fetch(USGS_ALL_DAY, { cache:"no-store" });
+        if (!res.ok) throw new Error("USGS error");
+        const data = await res.json();
+
+        const nextQuakes = (data.features || [])
+          .map(f => {
+            const coords = f.geometry?.coordinates; // [lon,lat,depth]
+            const p = f.properties || {};
+            return {
+              id: f.id,
+              lon: coords?.[0],
+              lat: coords?.[1],
+              depthKm: coords?.[2],
+              mag: p.mag,
+              magType: p.magType,
+              place: cleanPlace(p.place),
+              time: p.time,
+              url: p.url
+            };
+          })
+          .filter(q => Number.isFinite(q.lat) && Number.isFinite(q.lon) && Number.isFinite(q.time));
+
+        // detectar nuevos
+        const newIds = new Set(nextQuakes.map(q => q.id));
+        const newlyAdded = nextQuakes.filter(q => !lastSeenIds.has(q.id));
+
+        // actualizar state
+        currentQuakes = nextQuakes;
+        lastSeenIds = newIds;
+
+        statusEl.textContent = "en vivo";
+
+        // notificar (si procede)
+        maybeNotifyNewQuakes(newIds, newlyAdded);
+
+        render();
+      } catch (e){
+        statusEl.textContent = "error";
+        console.error(e);
+      }
+    }
+
+    // ===== PLATES INIT =====
+    async function loadPlatesOnce(){
+      try{
+        const res = await fetch(PLATE_BOUNDARIES_GEOJSON, { cache:"force-cache" });
+        if (!res.ok) throw new Error("No se pudo cargar placas");
+        platesData = await res.json();
+        applyPlatesToMaps();
+      } catch (e){
+        platesData = null;
+        platesOn = false;
+        btnPlacas.classList.remove("active");
+        console.error(e);
+      }
+    }
+
+    // ===== EVENT HANDLERS =====
+    btnCaribe.addEventListener("click", () => setMode("caribe"));
+    btnGlobal.addEventListener("click", () => setMode("global"));
+
+    btnPlacas.addEventListener("click", () => {
+      platesOn = !platesOn;
+      btnPlacas.classList.toggle("active", platesOn);
+      applyPlatesToMaps();
+    });
+
+    btnHeat.addEventListener("click", () => {
+      heatOn = !heatOn;
+      btnHeat.classList.toggle("active", heatOn);
+      render();
+    });
+
+    btnMyLoc.addEventListener("click", () => {
+      myLocOn = !myLocOn;
+      btnMyLoc.classList.toggle("active", myLocOn);
+      setUserMarker();
+      render();
+    });
+
+    btnNotify.addEventListener("click", async () => {
+      if (!notifyOn){
+        const ok = await enableNotifications();
+        if (!ok){
+          alert("No se pudo activar notificaciones (permiso denegado).");
+          return;
+        }
+        notifyOn = true;
+        btnNotify.classList.add("active");
+      } else {
+        notifyOn = false;
+        btnNotify.classList.remove("active");
+      }
+    });
+
+    searchBox.addEventListener("input", (e) => {
+      searchValue = e.target.value || "";
+      render();
+    });
+
+    minMag.addEventListener("input", (e) => {
+      minMagValue = parseFloat(e.target.value);
+      minMagLabel.textContent = minMagValue.toFixed(1);
+      chips.forEach(c => c.classList.remove("active"));
+      render();
+    });
+
+    chips.forEach(chip => {
+      chip.addEventListener("click", () => {
+        chips.forEach(c => c.classList.remove("active"));
+        chip.classList.add("active");
+        const v = parseFloat(chip.dataset.mag);
+        minMag.value = v;
+        minMagValue = v;
+        minMagLabel.textContent = minMagValue.toFixed(1);
+        render();
+      });
+    });
+
+    // ===== INIT =====
+    // default: satélite + placas ON, heat OFF, mi ubicación ON
+    initGeolocation();
+    loadPlatesOnce();
+    loadQuakes();
+    setInterval(loadQuakes, 60000);
+  </script>
+</body>
+</html>
+
